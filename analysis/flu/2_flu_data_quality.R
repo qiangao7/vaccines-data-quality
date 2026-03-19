@@ -25,7 +25,7 @@ library("glue")
 library("UpSetR")
 
 # Import custom functions
-source(here("analysis", "flu_vax", "0_flu_design.R"))
+source(here("analysis", "flu", "0_flu_design.R"))
 
 # create output directory
 output_dir <- here("output","outputs_flu", "flu_data_quality")

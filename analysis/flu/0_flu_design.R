@@ -3,7 +3,7 @@
 # define useful functions used in the codebase
 # define key design features for the study
 # define some look up tables to use in the codebase
-# this script should be sourced (using `source(here("analysis", "flu_vax", "0_flu_design.R"))`) at the start of each R script
+# this script should be sourced (using `source(here("analysis", "flu", "0_flu_design.R"))`) at the start of each R script
 # _________________________________________________
 
 library("tidyverse")
@@ -95,20 +95,20 @@ campaign_info_flu <-
 
 localrun <- Sys.getenv("OPENSAFELY_BACKEND") %in% c("", "expectations")
 
-output_dir <- here("analysis/flu_vax")
+output_dir <- here("analysis/flu")
 fs::dir_create(output_dir)
 
 if (localrun) {
 
   jsonlite::write_json(
     study_dates_flu,
-    path = here::here("analysis", "flu_vax", "study_dates_flu.json"),
+    path = here::here("analysis", "flu", "study_dates_flu.json"),
     pretty = TRUE, auto_unbox = TRUE
   )
 
   jsonlite::write_json(
     split(campaign_info_flu, f = campaign_info_flu$campaign_start_date) |> lapply(as.list),
-    path = here::here("analysis", "flu_vax", "campaign_info_flu.json"),
+    path = here::here("analysis", "flu", "campaign_info_flu.json"),
     pretty = TRUE, auto_unbox = TRUE,
   )
 }
