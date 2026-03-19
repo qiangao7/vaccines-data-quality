@@ -95,20 +95,20 @@ campaign_info_flu <-
 
 localrun <- Sys.getenv("OPENSAFELY_BACKEND") %in% c("", "expectations")
 
-output_dir <- here("output/outputs_flu")
+output_dir <- here("analysis/flu_vax")
 fs::dir_create(output_dir)
 
 if (localrun) {
 
   jsonlite::write_json(
     study_dates_flu,
-    path = here::here("output","outputs_flu", "study_dates_flu.json"),
+    path = here::here("analysis", "flu_vax", "study_dates_flu.json"),
     pretty = TRUE, auto_unbox = TRUE
   )
 
   jsonlite::write_json(
     split(campaign_info_flu, f = campaign_info_flu$campaign_start_date) |> lapply(as.list),
-    path = here::here("output","outputs_flu", "campaign_info_flu.json"),
+    path = here::here("analysis", "flu_vax", "campaign_info_flu.json"),
     pretty = TRUE, auto_unbox = TRUE,
   )
 }
