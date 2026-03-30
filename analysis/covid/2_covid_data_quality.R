@@ -2,7 +2,7 @@
 # Purpose:
 #   Import event‑level COVID‑19 vaccination data
 #   Construct data‑quality flags
-#   Output five descriptive summary tables
+#   Output descriptive summary tables
 #
 # Notes:
 #   - No records are removed in this script
@@ -32,9 +32,7 @@ options(width = 200) # set output width for capture.output
 
 # 1. extract event level data for vaccines ----
 
-data_vax_ELD0 <- read_feather(
-  here("output", "outputs_covid", "modify_dummy_extract", "vaccinations.arrow")
-)
+data_vax_ELD0 <- read_feather(here("output", "outputs_covid", "modify_dummy_extract", "vaccinations.arrow"))
 
 
 # 2. Prepare dataset 
@@ -44,8 +42,8 @@ data_vax_ELD0 <- read_feather(
 data_vax_ELD <-
   data_vax_ELD0 |>
   lazy_dt() |>
-  arrange(patient_id, vax_date) |>
-  filter(!is.na(vax_date)) |>   # only minimal removal
+  # arrange(patient_id, vax_date) |>
+  filter(!is.na(vax_date)) |>   
   as_tibble() |>
   mutate(
     # Harmonise product variable
@@ -57,6 +55,10 @@ data_vax_ELD <-
       vax_date,
       breaks = c(campaign_info$campaign_start_date, as.Date(Inf)),
       labels = campaign_info$campaign_label
+      
+    # distinct(.keep_all = TRUE) |> # remove exact duplicates # or use
+    # count(patient_id, vax_date, vax_product, age) |> 
+    # or alternatively, capture how many duplicate vaccines there are. This creates a new variable `n` counting the duplicates
     )
   ) |>
   lazy_dt()
@@ -108,8 +110,7 @@ data_vax_ELD <-
 
 products_cooccurrence_flat <- 
   data_vax_ELD |>
-  filter(age >= 12) |>
-  group_by(patient_id, vax_date, campaign, vax_product) |>
+  group_by(patient_id, vax_date,campaign, vax_product) |>
   summarise(
     n_product = n(),
     .groups = "drop_last"
@@ -152,8 +153,18 @@ data_vax_ELD <-
 
 
 # ---- Dose interval bins ----
+# Campaign stage classification:
+# - "Pre-2020-07-01" excluded from interval analysis (not meaningful)
+# - "Pre-roll-out" and "Primary series" grouped as "primary"
+# - All "Spring XXXX" and "Autumn XXXX" campaigns grouped as "booster"
+#
+# This allows interval analysis to focus on:
+# - within primary series intervals
+# - transitions from primary to booster
+# - intervals within and between booster campaigns
 data_vax_interval <-
   data_vax_ELD |>
+  filter(campaign != "Pre-2020-07-01") |>
   filter(!flag_same_day_multiple) |> # exclude same-day multiple-record combinations
   arrange(patient_id, vax_date) |>
   group_by(patient_id) |>
@@ -175,7 +186,34 @@ data_vax_interval <-
       interval_days >= 113 & interval_days <= 179 ~ "113-179",
       interval_days >= 180                         ~ "180+",
       TRUE ~ NA_character_
-    )
+    ),
+    interval_bin = factor(
+      interval_bin,
+      levels = c("1-6", "7-13", "14-29", "30-89", "90-112", "113-179", "180+")
+    ),
+
+    campaign_stage = case_when(
+      campaign %in% c("Pre-roll-out", "Primary series") ~ "primary",
+      grepl("Spring|Autumn", campaign) ~ "booster",
+      TRUE ~ NA_character_
+    ),
+
+    prev_campaign_stage = case_when(
+      prev_campaign %in% c("Pre-roll-out", "Primary series") ~ "primary",
+      grepl("Spring|Autumn", prev_campaign) ~ "booster",
+      TRUE ~ NA_character_
+    ),
+
+     interval_context = case_when(
+      prev_campaign_stage == "primary" & campaign_stage == "primary" ~ "within_primary",
+      prev_campaign_stage == "primary" & campaign_stage == "booster" ~ "primary_to_booster",
+      prev_campaign_stage == "booster" & campaign_stage == "booster" & prev_campaign == campaign ~ "within_booster_campaign",
+      prev_campaign_stage == "booster" & campaign_stage == "booster" & prev_campaign != campaign ~ "between_booster_campaigns",
+      TRUE ~ NA_character_
+    ),
+
+    campaign_transition_type = paste0(prev_campaign, " -> ", campaign),
+    product_transition_type  = paste0(prev_product, " -> ", vax_product)
   ) |>
   select(
     patient_id,
@@ -185,41 +223,19 @@ data_vax_interval <-
     vax_product,
     prev_campaign,
     campaign,
+    prev_campaign_stage,
+    campaign_stage,
     interval_days,
-    interval_bin
+    interval_bin,
+    interval_context,
+    campaign_transition_type,
+    product_transition_type
   )
 
-  data_vax_ELD <-
-  data_vax_ELD |>
-  left_join(
-    data_vax_interval |>
-      select(
-        patient_id,
-        vax_date,
-        campaign,
-        vax_product,
-        prev_date,
-        prev_product,
-        prev_campaign,
-        interval_days,
-        interval_bin
-      ),
-    by = c("patient_id", "vax_date", "campaign", "vax_product")
-  ) |>
-  as_tibble()
-
-
-# 4. Convert to long-format flag table
-
-# denominators for percentages ----
-n_total_records  <- nrow(data_vax_ELD)
-n_total_patients <- data_vax_ELD |>
-  distinct(patient_id) |>
-  nrow()
-
+# 4. Convert to long-format flag table (non-interval)
 
 # ---- Non-interval flags ----
-flag_long_main <-
+flag_long_noninterval <-
   data_vax_ELD |>
   select(
     patient_id, vax_date, campaign, vax_product,
@@ -243,26 +259,19 @@ flag_long_main <-
   select(patient_id, vax_date, campaign, vax_product, flag_type)
 
 
-# ---- Interval flags ----
-flag_long_interval <-
-  data_vax_interval |>
-  filter(!is.na(interval_bin)) |>
-  mutate(
-    flag_type = paste0("interval_", interval_bin)
-  ) |>
-  select(patient_id, vax_date, campaign, vax_product, flag_type)
+# 5. Output: descriptive summary tables
+# Rounded total denominators for overall percentages
 
+denom_noninterval_total <-
+  data_vax_ELD |>
+  summarise(
+    denom_records_total  = roundmid_any(n(), sdc_threshold),
+    denom_patients_total = roundmid_any(n_distinct(patient_id), sdc_threshold)
+  )
 
-# ---- Combine ----
-flag_full <-
-  bind_rows(flag_long_main, flag_long_interval)
-
-
-# 5. Output: five descriptive summary tables
-
-# ---- Table 1: Overall summary ----
-table_overall <-
-  flag_full |>
+# ---- Table 1: Overall summary of non-interval flags ----
+table_overall_noninterval_flags <-
+  flag_long_noninterval |>
   group_by(flag_type) |>
   summarise(
     n_records  = roundmid_any(n(), sdc_threshold),
@@ -270,126 +279,276 @@ table_overall <-
     .groups = "drop"
   ) |>
   mutate(
-    pct_records  = round(100 * n_records  / n_total_records, 1),
-    pct_patients = round(100 * n_patients / n_total_patients, 1)
+    denom_records_total  = denom_noninterval_total$denom_records_total,
+    denom_patients_total = denom_noninterval_total$denom_patients_total,
+    pct_records_total  = round(100 * n_records  / denom_records_total, 1),
+    pct_patients_total = round(100 * n_patients / denom_patients_total, 1)
+    
+  ) |>
+  select(
+    flag_type,
+    n_records,
+    n_patients,
+    denom_records_total,
+    denom_patients_total,
+    pct_records_total,
+    pct_patients_total
   ) |>
   arrange(flag_type)
 
 write_csv(
-  table_overall,
-  fs::path(output_dir, "count_overall_flags.csv")
+  table_overall_noninterval_flags,
+  fs::path(output_dir, "count_overall_noninterval_flags.csv")
 )
 
 
-# ---- Table 2: Campaign summary ----
-table_campaign <-
-  flag_full |>
+# ---- Table 2: Campaign summary of non-interval flags ----
+table_campaign_noninterval_flags <-
+  flag_long_noninterval |>
   group_by(campaign, flag_type) |>
   summarise(
     n_records  = roundmid_any(n(), sdc_threshold),
     n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
     .groups = "drop"
   ) |>
-  left_join(
-    data_vax_ELD |>
-      group_by(campaign) |>
-      summarise(
-        denom_records  = n(),
-        denom_patients = n_distinct(patient_id),
-        .groups = "drop"
-      ),
-    by = "campaign"
-  ) |>
   mutate(
-    pct_records  = round(100 * n_records  / denom_records, 1),
-    pct_patients = round(100 * n_patients / denom_patients, 1)
+    denom_records_total  = denom_noninterval_total$denom_records_total,
+    denom_patients_total = denom_noninterval_total$denom_patients_total,
+    pct_records_total  = round(100 * n_records  / denom_records_total, 1),
+    pct_patients_total = round(100 * n_patients / denom_patients_total, 1)
   ) |>
   select(
     campaign,
     flag_type,
     n_records,
     n_patients,
-    pct_records,
-    pct_patients
+    denom_records_total,
+    denom_patients_total,
+    pct_records_total,
+    pct_patients_total
   ) |>
   arrange(campaign, flag_type)
 
 write_csv(
-  table_campaign,
-  fs::path(output_dir, "count_campaign_flags.csv")
+  table_campaign_noninterval_flags,
+  fs::path(output_dir, "count_campaign_noninterval_flags.csv")
 )
 
-
-# ---- Table 3: Product summary ----
-table_product <-
-  flag_full |>
+# ---- Table 3: Product summary of non-interval flags ----
+table_product_noninterval_flags <-
+  flag_long_noninterval |>
   group_by(vax_product, flag_type) |>
   summarise(
     n_records  = roundmid_any(n(), sdc_threshold),
     n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
     .groups = "drop"
   ) |>
-  left_join(
-    data_vax_ELD |>
-      group_by(vax_product) |>
-      summarise(
-        denom_records  = n(),
-        denom_patients = n_distinct(patient_id),
-        .groups = "drop"
-      ),
-    by = "vax_product"
-  ) |>
   mutate(
-    pct_records  = round(100 * n_records  / denom_records, 1),
-    pct_patients = round(100 * n_patients / denom_patients, 1)
+    denom_records_total  = denom_noninterval_total$denom_records_total,
+    denom_patients_total = denom_noninterval_total$denom_patients_total,
+    pct_records_total  = round(100 * n_records  / denom_records_total, 1),
+    pct_patients_total = round(100 * n_patients / denom_patients_total, 1)
   ) |>
   select(
     vax_product,
     flag_type,
     n_records,
     n_patients,
-    pct_records,
-    pct_patients
+    denom_records_total,
+    denom_patients_total,
+    pct_records_total,
+    pct_patients_total
   ) |>
   arrange(vax_product, flag_type)
 
 write_csv(
-  table_product,
-  fs::path(output_dir, "count_product_flags.csv")
+  table_product_noninterval_flags,
+  fs::path(output_dir, "count_product_noninterval_flags.csv")
 )
 
 
-# Note: These tables provide tidy data only
-# Plots are not generated here and should be created separately in R.
+# ---- Interval analysis denominators ----
+# Rounded total denominators for overall percentages
 
-
-# ---- Table 4: Flag × Campaign distribution ----
-flag_campaign_plot <-
-  flag_full |>
-  group_by(campaign, flag_type) |>
+denom_interval_total <-
+  data_vax_interval |>
   summarise(
-    n = roundmid_any(n(), sdc_threshold),
-    .groups = "drop"
-    )
+    denom_records_total  = roundmid_any(n(), sdc_threshold),
+    denom_patients_total = roundmid_any(n_distinct(patient_id), sdc_threshold)
+  )
 
+
+# ---- Table 4: interval context x interval bin ----
+# For each interval context, summarise the distribution of interval bins.
+# Percentages are shown:
+# 1) within each interval context
+# 2) within the total interval analysis base
+
+table_interval_context <-
+  data_vax_interval |>
+  group_by(interval_context, interval_bin) |>
+  summarise(
+    n_records  = roundmid_any(n(), sdc_threshold),
+    n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
+    .groups = "drop"
+  ) |>
+  left_join(
+    data_vax_interval |>
+      group_by(interval_context) |>
+      summarise(
+        denom_records_context  = roundmid_any(n(), sdc_threshold),
+        denom_patients_context = roundmid_any(n_distinct(patient_id), sdc_threshold),
+        .groups = "drop"
+      ),
+    by = "interval_context"
+  ) |>
+  mutate(
+    denom_records_total  = denom_interval_total$denom_records_total,
+    denom_patients_total = denom_interval_total$denom_patients_total,
+    pct_records_within_context =
+      round(100 * n_records / denom_records_context, 1),
+    pct_patients_within_context =
+      round(100 * n_patients / denom_patients_context, 1),
+
+    pct_records_total =
+      round(100 * n_records / denom_records_total, 1),
+    pct_patients_total =
+      round(100 * n_patients / denom_patients_total, 1)
+  ) |>
+  select(
+    interval_context,
+    interval_bin,
+    n_records,
+    n_patients,
+    denom_records_context,
+    denom_patients_context,
+    denom_records_total,
+    denom_patients_total,
+    pct_records_within_context,
+    pct_patients_within_context,
+    pct_records_total,
+    pct_patients_total
+  ) |>
+  arrange(interval_context, interval_bin)
 
 write_csv(
-  flag_campaign_plot,
-  fs::path(output_dir, "flag_distribution_campaign.csv")
+  table_interval_context,
+  fs::path(output_dir, "count_interval_context.csv")
 )
 
+# ---- Table 5: campaign transition type x interval bin ----
+# For each campaign transition type, summarise the distribution of interval bins.
+# Percentages are shown:
+# 1) within each campaign transition type
+# 2) within the total interval analysis base
 
-
-# ---- Table 5: Flag × Product distribution ----
-flag_product_plot <-
-  flag_full |>
-  group_by(vax_product, flag_type) |>
+table_interval_campaign_transition <-
+  data_vax_interval |>
+  group_by(campaign_transition_type, interval_bin) |>
   summarise(
-    n = roundmid_any(n(), sdc_threshold),
+    n_records  = roundmid_any(n(), sdc_threshold),
+    n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
     .groups = "drop"
-    )
+  ) |>
+  left_join(
+    data_vax_interval |>
+      group_by(campaign_transition_type) |>
+      summarise(
+        denom_records_campaign_transition  = roundmid_any(n(), sdc_threshold),
+        denom_patients_campaign_transition = roundmid_any(n_distinct(patient_id), sdc_threshold),
+        .groups = "drop"
+      ),
+    by = "campaign_transition_type"
+  ) |>
+  mutate(
+    denom_records_total  = denom_interval_total$denom_records_total,
+    denom_patients_total = denom_interval_total$denom_patients_total,
+    pct_records_within_campaign_transition =
+      round(100 * n_records / denom_records_campaign_transition, 1),
+    pct_patients_within_campaign_transition =
+      round(100 * n_patients / denom_patients_campaign_transition, 1),
+
+    pct_records_total =
+      round(100 * n_records / denom_records_total, 1),
+    pct_patients_total =
+      round(100 * n_patients / denom_patients_total, 1)
+  ) |>
+  select(
+    campaign_transition_type,
+    interval_bin,
+    n_records,
+    n_patients,
+    denom_records_campaign_transition,
+    denom_patients_campaign_transition,
+    denom_records_total,
+    denom_patients_total,
+    pct_records_within_campaign_transition,
+    pct_patients_within_campaign_transition,
+    pct_records_total,
+    pct_patients_total
+  ) |>
+  arrange(campaign_transition_type, interval_bin)
 
 write_csv(
-  flag_product_plot,
-  fs::path(output_dir, "flag_distribution_product.csv")
+  table_interval_campaign_transition,
+  fs::path(output_dir, "count_interval_campaign_transition.csv")
+)
+
+# ---- Table 6: product transition type x interval bin ----
+# For each product transition type, summarise the distribution of interval bins.
+# Percentages are shown:
+# 1) within each product transition type
+# 2) within the total interval analysis base
+#
+
+table_interval_product_transition <-
+  data_vax_interval |>
+  group_by(product_transition_type, interval_bin) |>
+  summarise(
+    n_records  = roundmid_any(n(), sdc_threshold),
+    n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
+    .groups = "drop"
+  ) |>
+  left_join(
+    data_vax_interval |>
+      group_by(product_transition_type) |>
+      summarise(
+        denom_records_product_transition  = roundmid_any(n(), sdc_threshold),
+        denom_patients_product_transition = roundmid_any(n_distinct(patient_id), sdc_threshold),
+        .groups = "drop"
+      ),
+    by = "product_transition_type"
+  ) |>
+  mutate(
+    denom_records_total  = denom_interval_total$denom_records_total,
+    denom_patients_total = denom_interval_total$denom_patients_total,
+    pct_records_within_product_transition =
+      round(100 * n_records / denom_records_product_transition, 1),
+    pct_patients_within_product_transition =
+      round(100 * n_patients / denom_patients_product_transition, 1),
+
+    pct_records_total =
+      round(100 * n_records / denom_records_total, 1),
+    pct_patients_total =
+      round(100 * n_patients / denom_patients_total, 1)
+  ) |>
+  select(
+    product_transition_type,
+    interval_bin,
+    n_records,
+    n_patients,
+    denom_records_product_transition,
+    denom_patients_product_transition,
+    denom_records_total,
+    denom_patients_total,
+    pct_records_within_product_transition,
+    pct_patients_within_product_transition,
+    pct_records_total,
+    pct_patients_total
+  ) |>
+  arrange(product_transition_type, interval_bin)
+
+write_csv(
+  table_interval_product_transition,
+  fs::path(output_dir, "count_interval_product_transition.csv")
 )
