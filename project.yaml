@@ -15,6 +15,7 @@ actions:
     run: ehrql:v1 generate-dataset analysis/flu/1_flu_dataset_definition.py
       --output output/outputs_flu/extract_flu:arrow
       #--dummy-data-file analysis/1-extract/dummy-data/dummy_varying.arrow
+    needs: [design_elements_flu]
     outputs:
       highly_sensitive:
         cohort: output/outputs_flu/extract_flu/*.arrow
