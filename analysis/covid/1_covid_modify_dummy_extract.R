@@ -66,17 +66,17 @@ inject_vax_errors <- function(data, seed = 123) {
   n_all <- nrow(data)
   remaining <- seq_len(n_all)
 
-  # 1) Implausible early date: vax_date < 2020-07-01
+  # 1) Implausible early date: vax_date < 2020-04-23
   idx_early <- sample(remaining, max(10, floor(0.02 * n_all)))
-  early_dates <- seq(as.Date("2019-01-01"), as.Date("2020-06-30"), by = "day")
+  early_dates <- seq(as.Date("2019-01-01"), as.Date("2020-04-22"), by = "day")
   data$vax_date[idx_early] <- sample(early_dates, length(idx_early), replace = TRUE)
 
   remaining <- setdiff(remaining, idx_early)
 
 
-  # 2) Pre-rollout (2020-07-01 to 2020-12-07)
+  # 2) Pre-rollout (2020-04-23 to 2020-12-07)
   idx_prerollout <- sample(remaining, max(10, floor(0.02 * n_all)))
-  prerollout_dates <- seq(as.Date("2020-07-01"), as.Date("2020-12-07"), by = "day")
+  prerollout_dates <- seq(as.Date("2020-04-23"), as.Date("2020-12-07"), by = "day")
   data$vax_date[idx_prerollout] <- sample(prerollout_dates, length(idx_prerollout), replace = TRUE)
 
   remaining <- setdiff(remaining, idx_prerollout)

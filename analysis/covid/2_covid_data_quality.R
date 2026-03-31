@@ -2,7 +2,7 @@
 # Purpose:
 #   Import event‑level COVID‑19 vaccination data
 #   Construct data‑quality flags
-#   Output descriptive summary tables
+#   Output 6 descriptive summary tables
 #
 # Notes:
 #   - No records are removed in this script
@@ -36,13 +36,12 @@ data_vax_ELD0 <- read_feather(here("output", "outputs_covid", "modify_dummy_extr
 
 
 # 2. Prepare dataset 
-# - remove rows where vaccination date is missing
-# - attach info about the campaign during which the vaccination was given
 
 data_vax_ELD <-
   data_vax_ELD0 |>
   lazy_dt() |>
-  # arrange(patient_id, vax_date) |>
+  arrange(patient_id, vax_date) |>
+  # Remove rows where vaccination date is missing
   filter(!is.na(vax_date)) |>   
   as_tibble() |>
   mutate(
@@ -73,21 +72,20 @@ stopifnot("There are unmapped product names" = length(unmapped_products) == 0)
 
 # 3. Construct data‑quality flags
 
-
-# --- Impossible dates ---
+# --- 3.1 Impossible dates ---
 data_vax_ELD <-
   data_vax_ELD |>
   mutate(
-    flag_implausible_early_date = vax_date < as.Date("2020-07-01"),
+    flag_implausible_early_date = vax_date < as.Date("2020-04-23"),
     flag_pre_rollout_date =
-      vax_date >= as.Date("2020-07-01") &
+      vax_date >= as.Date("2020-04-23") &
       vax_date <  as.Date("2020-12-08")
   ) |>
   as_tibble()
 
 
 
-# ---- Product approval flags ----
+# ---- 3.2 Product approval flags ----
 data_vax_ELD <-
   data_vax_ELD |>
   mutate(
@@ -106,7 +104,7 @@ data_vax_ELD <-
 
 
 
-# ---- Same‑day multiple records ----
+# ---- 3.3 Multiple Vaccinations on the Same Day ----
 
 products_cooccurrence_flat <- 
   data_vax_ELD |>
@@ -152,9 +150,9 @@ data_vax_ELD <-
   as_tibble()
 
 
-# ---- Dose interval bins ----
+# ---- 3.4 Implausible Intervals Between Consecutive Doses ----
 # Campaign stage classification:
-# - "Pre-2020-07-01" excluded from interval analysis (not meaningful)
+# - "Pre-2020-04-23" excluded from interval analysis (not meaningful)
 # - "Pre-roll-out" and "Primary series" grouped as "primary"
 # - All "Spring XXXX" and "Autumn XXXX" campaigns grouped as "booster"
 #
@@ -164,7 +162,7 @@ data_vax_ELD <-
 # - intervals within and between booster campaigns
 data_vax_interval <-
   data_vax_ELD |>
-  filter(campaign != "Pre-2020-07-01") |>
+  filter(campaign != "Pre-2020-04-23") |>
   filter(!flag_same_day_multiple) |> # exclude same-day multiple-record combinations
   arrange(patient_id, vax_date) |>
   group_by(patient_id) |>
@@ -180,7 +178,8 @@ data_vax_interval <-
     interval_bin = case_when(
       interval_days >= 1   & interval_days <= 6   ~ "1-6",
       interval_days >= 7   & interval_days <= 13  ~ "7-13",
-      interval_days >= 14  & interval_days <= 29  ~ "14-29",
+      interval_days >= 14  & interval_days <= 20  ~ "14-20",  
+      interval_days >= 21  & interval_days <= 29  ~ "21-29",
       interval_days >= 30  & interval_days <= 89  ~ "30-89",
       interval_days >= 90  & interval_days <= 112 ~ "90-112",
       interval_days >= 113 & interval_days <= 179 ~ "113-179",
@@ -189,7 +188,7 @@ data_vax_interval <-
     ),
     interval_bin = factor(
       interval_bin,
-      levels = c("1-6", "7-13", "14-29", "30-89", "90-112", "113-179", "180+")
+      levels = c("1-6", "7-13","14-20", "21-29","30-89", "90-112", "113-179", "180+")
     ),
 
     campaign_stage = case_when(
@@ -260,8 +259,34 @@ flag_long_noninterval <-
 
 
 # 5. Output: descriptive summary tables
-# Rounded total denominators for overall percentages
 
+# ---- helper 1: summary table with total denominator only ----
+make_summary_table_total <- function(data, group_vars, denom_df) {
+  data |>
+    group_by(across(all_of(group_vars))) |>
+    summarise(
+      n_records  = roundmid_any(n(), sdc_threshold),
+      n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
+      .groups = "drop"
+    ) |>
+    mutate(
+      denom_records_total  = denom_df$denom_records_total,
+      denom_patients_total = denom_df$denom_patients_total,
+      pct_records_total  = round(100 * n_records  / denom_records_total, 1),
+      pct_patients_total = round(100 * n_patients / denom_patients_total, 1)
+    ) |>
+    select(
+      all_of(group_vars),
+      n_records,
+      n_patients,
+      denom_records_total,
+      denom_patients_total,
+      pct_records_total,
+      pct_patients_total
+    )
+}
+
+# ---- non-interval denominators ----
 denom_noninterval_total <-
   data_vax_ELD |>
   summarise(
@@ -271,28 +296,10 @@ denom_noninterval_total <-
 
 # ---- Table 1: Overall summary of non-interval flags ----
 table_overall_noninterval_flags <-
-  flag_long_noninterval |>
-  group_by(flag_type) |>
-  summarise(
-    n_records  = roundmid_any(n(), sdc_threshold),
-    n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
-    .groups = "drop"
-  ) |>
-  mutate(
-    denom_records_total  = denom_noninterval_total$denom_records_total,
-    denom_patients_total = denom_noninterval_total$denom_patients_total,
-    pct_records_total  = round(100 * n_records  / denom_records_total, 1),
-    pct_patients_total = round(100 * n_patients / denom_patients_total, 1)
-    
-  ) |>
-  select(
-    flag_type,
-    n_records,
-    n_patients,
-    denom_records_total,
-    denom_patients_total,
-    pct_records_total,
-    pct_patients_total
+  make_summary_table_total(
+    data = flag_long_noninterval,
+    group_vars = c("flag_type"),
+    denom_df = denom_noninterval_total
   ) |>
   arrange(flag_type)
 
@@ -301,31 +308,12 @@ write_csv(
   fs::path(output_dir, "count_overall_noninterval_flags.csv")
 )
 
-
 # ---- Table 2: Campaign summary of non-interval flags ----
 table_campaign_noninterval_flags <-
-  flag_long_noninterval |>
-  group_by(campaign, flag_type) |>
-  summarise(
-    n_records  = roundmid_any(n(), sdc_threshold),
-    n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
-    .groups = "drop"
-  ) |>
-  mutate(
-    denom_records_total  = denom_noninterval_total$denom_records_total,
-    denom_patients_total = denom_noninterval_total$denom_patients_total,
-    pct_records_total  = round(100 * n_records  / denom_records_total, 1),
-    pct_patients_total = round(100 * n_patients / denom_patients_total, 1)
-  ) |>
-  select(
-    campaign,
-    flag_type,
-    n_records,
-    n_patients,
-    denom_records_total,
-    denom_patients_total,
-    pct_records_total,
-    pct_patients_total
+  make_summary_table_total(
+    data = flag_long_noninterval,
+    group_vars = c("campaign", "flag_type"),
+    denom_df = denom_noninterval_total
   ) |>
   arrange(campaign, flag_type)
 
@@ -336,28 +324,10 @@ write_csv(
 
 # ---- Table 3: Product summary of non-interval flags ----
 table_product_noninterval_flags <-
-  flag_long_noninterval |>
-  group_by(vax_product, flag_type) |>
-  summarise(
-    n_records  = roundmid_any(n(), sdc_threshold),
-    n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
-    .groups = "drop"
-  ) |>
-  mutate(
-    denom_records_total  = denom_noninterval_total$denom_records_total,
-    denom_patients_total = denom_noninterval_total$denom_patients_total,
-    pct_records_total  = round(100 * n_records  / denom_records_total, 1),
-    pct_patients_total = round(100 * n_patients / denom_patients_total, 1)
-  ) |>
-  select(
-    vax_product,
-    flag_type,
-    n_records,
-    n_patients,
-    denom_records_total,
-    denom_patients_total,
-    pct_records_total,
-    pct_patients_total
+  make_summary_table_total(
+    data = flag_long_noninterval,
+    group_vars = c("vax_product", "flag_type"),
+    denom_df = denom_noninterval_total
   ) |>
   arrange(vax_product, flag_type)
 
@@ -366,10 +336,63 @@ write_csv(
   fs::path(output_dir, "count_product_noninterval_flags.csv")
 )
 
-
 # ---- Interval analysis denominators ----
-# Rounded total denominators for overall percentages
 
+# ---- helper 2: interval table with within-group + total denominator ----
+make_interval_table <- function(data, group_var, denom_df) {
+  
+  summary_df <-
+    data |>
+    group_by(across(all_of(c(group_var, "interval_bin")))) |>
+    summarise(
+      n_records  = roundmid_any(n(), sdc_threshold),
+      n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
+      .groups = "drop"
+    )
+
+  denom_df_group <-
+    data |>
+    group_by(across(all_of(group_var))) |>
+    summarise(
+      denom_records_group  = roundmid_any(n(), sdc_threshold),
+      denom_patients_group = roundmid_any(n_distinct(patient_id), sdc_threshold),
+      .groups = "drop"
+    )
+
+  summary_df |>
+    left_join(denom_df_group, by = group_var) |>
+    mutate(
+      denom_records_total  = denom_df$denom_records_total,
+      denom_patients_total = denom_df$denom_patients_total,
+
+      pct_records_within_group =
+        round(100 * n_records / denom_records_group, 1),
+      pct_patients_within_group =
+        round(100 * n_patients / denom_patients_group, 1),
+
+      pct_records_total =
+        round(100 * n_records / denom_records_total, 1),
+      pct_patients_total =
+        round(100 * n_patients / denom_patients_total, 1)
+    ) |>
+    select(
+      all_of(group_var),
+      interval_bin,
+      n_records,
+      n_patients,
+      denom_records_group,
+      denom_patients_group,
+      denom_records_total,
+      denom_patients_total,
+      pct_records_within_group,
+      pct_patients_within_group,
+      pct_records_total,
+      pct_patients_total
+    )
+}
+
+
+# ---- interval denominator ----
 denom_interval_total <-
   data_vax_interval |>
   summarise(
@@ -377,57 +400,12 @@ denom_interval_total <-
     denom_patients_total = roundmid_any(n_distinct(patient_id), sdc_threshold)
   )
 
-
 # ---- Table 4: interval context x interval bin ----
-# For each interval context, summarise the distribution of interval bins.
-# Percentages are shown:
-# 1) within each interval context
-# 2) within the total interval analysis base
-
 table_interval_context <-
-  data_vax_interval |>
-  group_by(interval_context, interval_bin) |>
-  summarise(
-    n_records  = roundmid_any(n(), sdc_threshold),
-    n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
-    .groups = "drop"
-  ) |>
-  left_join(
-    data_vax_interval |>
-      group_by(interval_context) |>
-      summarise(
-        denom_records_context  = roundmid_any(n(), sdc_threshold),
-        denom_patients_context = roundmid_any(n_distinct(patient_id), sdc_threshold),
-        .groups = "drop"
-      ),
-    by = "interval_context"
-  ) |>
-  mutate(
-    denom_records_total  = denom_interval_total$denom_records_total,
-    denom_patients_total = denom_interval_total$denom_patients_total,
-    pct_records_within_context =
-      round(100 * n_records / denom_records_context, 1),
-    pct_patients_within_context =
-      round(100 * n_patients / denom_patients_context, 1),
-
-    pct_records_total =
-      round(100 * n_records / denom_records_total, 1),
-    pct_patients_total =
-      round(100 * n_patients / denom_patients_total, 1)
-  ) |>
-  select(
-    interval_context,
-    interval_bin,
-    n_records,
-    n_patients,
-    denom_records_context,
-    denom_patients_context,
-    denom_records_total,
-    denom_patients_total,
-    pct_records_within_context,
-    pct_patients_within_context,
-    pct_records_total,
-    pct_patients_total
+  make_interval_table(
+    data = data_vax_interval,
+    group_var = "interval_context",
+    denom_df = denom_interval_total
   ) |>
   arrange(interval_context, interval_bin)
 
@@ -437,55 +415,11 @@ write_csv(
 )
 
 # ---- Table 5: campaign transition type x interval bin ----
-# For each campaign transition type, summarise the distribution of interval bins.
-# Percentages are shown:
-# 1) within each campaign transition type
-# 2) within the total interval analysis base
-
 table_interval_campaign_transition <-
-  data_vax_interval |>
-  group_by(campaign_transition_type, interval_bin) |>
-  summarise(
-    n_records  = roundmid_any(n(), sdc_threshold),
-    n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
-    .groups = "drop"
-  ) |>
-  left_join(
-    data_vax_interval |>
-      group_by(campaign_transition_type) |>
-      summarise(
-        denom_records_campaign_transition  = roundmid_any(n(), sdc_threshold),
-        denom_patients_campaign_transition = roundmid_any(n_distinct(patient_id), sdc_threshold),
-        .groups = "drop"
-      ),
-    by = "campaign_transition_type"
-  ) |>
-  mutate(
-    denom_records_total  = denom_interval_total$denom_records_total,
-    denom_patients_total = denom_interval_total$denom_patients_total,
-    pct_records_within_campaign_transition =
-      round(100 * n_records / denom_records_campaign_transition, 1),
-    pct_patients_within_campaign_transition =
-      round(100 * n_patients / denom_patients_campaign_transition, 1),
-
-    pct_records_total =
-      round(100 * n_records / denom_records_total, 1),
-    pct_patients_total =
-      round(100 * n_patients / denom_patients_total, 1)
-  ) |>
-  select(
-    campaign_transition_type,
-    interval_bin,
-    n_records,
-    n_patients,
-    denom_records_campaign_transition,
-    denom_patients_campaign_transition,
-    denom_records_total,
-    denom_patients_total,
-    pct_records_within_campaign_transition,
-    pct_patients_within_campaign_transition,
-    pct_records_total,
-    pct_patients_total
+  make_interval_table(
+    data = data_vax_interval,
+    group_var = "campaign_transition_type",
+    denom_df = denom_interval_total
   ) |>
   arrange(campaign_transition_type, interval_bin)
 
@@ -495,56 +429,11 @@ write_csv(
 )
 
 # ---- Table 6: product transition type x interval bin ----
-# For each product transition type, summarise the distribution of interval bins.
-# Percentages are shown:
-# 1) within each product transition type
-# 2) within the total interval analysis base
-#
-
 table_interval_product_transition <-
-  data_vax_interval |>
-  group_by(product_transition_type, interval_bin) |>
-  summarise(
-    n_records  = roundmid_any(n(), sdc_threshold),
-    n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
-    .groups = "drop"
-  ) |>
-  left_join(
-    data_vax_interval |>
-      group_by(product_transition_type) |>
-      summarise(
-        denom_records_product_transition  = roundmid_any(n(), sdc_threshold),
-        denom_patients_product_transition = roundmid_any(n_distinct(patient_id), sdc_threshold),
-        .groups = "drop"
-      ),
-    by = "product_transition_type"
-  ) |>
-  mutate(
-    denom_records_total  = denom_interval_total$denom_records_total,
-    denom_patients_total = denom_interval_total$denom_patients_total,
-    pct_records_within_product_transition =
-      round(100 * n_records / denom_records_product_transition, 1),
-    pct_patients_within_product_transition =
-      round(100 * n_patients / denom_patients_product_transition, 1),
-
-    pct_records_total =
-      round(100 * n_records / denom_records_total, 1),
-    pct_patients_total =
-      round(100 * n_patients / denom_patients_total, 1)
-  ) |>
-  select(
-    product_transition_type,
-    interval_bin,
-    n_records,
-    n_patients,
-    denom_records_product_transition,
-    denom_patients_product_transition,
-    denom_records_total,
-    denom_patients_total,
-    pct_records_within_product_transition,
-    pct_patients_within_product_transition,
-    pct_records_total,
-    pct_patients_total
+  make_interval_table(
+    data = data_vax_interval,
+    group_var = "product_transition_type",
+    denom_df = denom_interval_total
   ) |>
   arrange(product_transition_type, interval_bin)
 

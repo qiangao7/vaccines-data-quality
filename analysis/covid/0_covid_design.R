@@ -31,8 +31,8 @@ roundmid_any <- function(x, to = 1) {
 
 study_dates <-
   list(
-    firstpossiblevax_date = "2020-07-01",
-    start_date = "2020-12-07",
+    firstpossiblevax_date = "2020-04-23",
+    start_date = "2020-12-08",
     end_date = "2026-12-31"
   ) |>
   lapply(as.Date)
@@ -48,9 +48,9 @@ sdc_threshold <- 10
 campaign_info <-
   tribble(
     ~campaign_label,        ~campaign_start_date,      ~primary_milestone_date, ~age_date, ~age_threshold, ~clinical_priority,
-    "Pre-2020-07-01", "1900-01-01", "1900-01-01", "1900-01-01", 16, "primis_atrisk",
+    "Pre-2020-04-23", "1900-01-01", "1900-01-01", "1900-01-01", 16, "primis_atrisk",
     "Pre-roll-out",   as.character(study_dates$firstpossiblevax_date), as.character(study_dates$firstpossiblevax_date), as.character(study_dates$firstpossiblevax_date), 16, "primis_atrisk",
-    "Primary series", "2020-12-07", "2021-06-30", "2021-03-31", 16, "primis_atrisk",
+    "Primary series", "2020-12-08", "2021-06-30", "2021-03-31", 16, "primis_atrisk",
     "Autumn 2021",    "2021-09-06", "2022-02-28", "2021-08-31", 16, "primis_atrisk",
     "Spring 2022",    "2022-03-21", "2022-06-30", "2022-06-30", 75, "immunosuppressed",
     "Autumn 2022",    "2022-08-29", "2023-02-28", "2023-03-31", 50, "primis_atrisk",
