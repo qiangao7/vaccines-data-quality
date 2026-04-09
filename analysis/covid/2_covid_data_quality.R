@@ -26,7 +26,7 @@ source(here("analysis", "covid", "0_covid_utility_functions.R"))
 source(here("analysis", "covid", "0_covid_design.R"))
 
 # create output directory
-output_dir <- here("output", "outputs_covid", "covid_data_quality")
+output_dir <- here("output", "covid", "covid_data_quality")
 fs::dir_create(output_dir)
 options(width = 200) # set output width for capture.output
 
@@ -83,10 +83,10 @@ stopifnot("There are unmapped product names" = length(unmapped_products) == 0)
 data_vax_ELD <-
   data_vax_ELD |>
   mutate(
-    flag_implausible_early_date = vax_date < as.Date("2020-04-23"),
+    flag_implausible_early_date = vax_date < study_dates$firstpossiblevax_date,
     flag_pre_rollout_date =
-      vax_date >= as.Date("2020-04-23") &
-      vax_date <  as.Date("2020-12-08")
+      vax_date >= study_dates$firstpossiblevax_date &
+      vax_date <  study_dates$start_date
   ) |>
   as_tibble()
 

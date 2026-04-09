@@ -16,8 +16,8 @@ recalculate_age_from_shift <- function(data) {
 make_vax_baseline_clean <- function(data, seed = 123) {
   set.seed(seed)
 
-  start_date <- as.Date("2020-12-08")
-  end_date   <- as.Date("2026-03-24")
+  start_date <- study_dates$start_date
+  end_date   <- study_dates$end_date
 
   short_names <- names(approval_lookup)
   valid_dates <- seq(start_date, end_date, by = "day")
@@ -65,7 +65,7 @@ inject_vax_errors <- function(data, seed = 123) {
 
   # 1) Implausible early date: vax_date < 2020-04-23
   idx_early <- sample(remaining, max(10, floor(0.02 * n_all)))
-  early_dates <- seq(as.Date("2019-01-01"), as.Date("2020-04-22"), by = "day")
+  early_dates <- seq(as.Date("2019-01-01"), study_dates$firstpossiblevax_date - 1, by = "day")
   data$vax_date[idx_early] <- sample(early_dates, length(idx_early), replace = TRUE)
 
   remaining <- setdiff(remaining, idx_early)
@@ -73,7 +73,7 @@ inject_vax_errors <- function(data, seed = 123) {
 
   # 2) Pre-rollout (2020-04-23 to 2020-12-07)
   idx_prerollout <- sample(remaining, max(10, floor(0.02 * n_all)))
-  prerollout_dates <- seq(as.Date("2020-04-23"), as.Date("2020-12-07"), by = "day")
+  prerollout_dates <- seq(study_dates$firstpossiblevax_date, study_dates$start_date - 1, by = "day")
   data$vax_date[idx_prerollout] <- sample(prerollout_dates, length(idx_prerollout), replace = TRUE)
 
   remaining <- setdiff(remaining, idx_prerollout)

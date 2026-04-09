@@ -11,7 +11,6 @@ library("tidyverse")
 # Design elements ----
 
 # key study dates
-# The dates are saved in json format so they can be read in by R and python scripts
 # - firstpossiblevax_date is the date from which we want to identify covid vaccines. the mass vax programme was 8 Dec 2020 but other people were vaccinated earlier in trials, so want to pick these people up too (and possibly exclude them)
 # - start_date is when we start the observational period proper, at the start of the mass vax programme
 # - end_date is when we stop the observation period. This may be extended as the study progresses
@@ -227,25 +226,3 @@ approval_lookup <- c(
 # relabel_from_lookup <- function(x, from, to, source){
 #   left_join(tibble(x=x), source, by = {{from}})[[{{to}}]]
 # }
-
-
-
-# Local run flag ----
-# is this script being run locally, and if so do we need to output objects to be picked up by ehrQL scripts
-
-localrun <- Sys.getenv("OPENSAFELY_BACKEND") %in% c("", "expectations")
-
-if (localrun) {
-
-  jsonlite::write_json(
-    study_dates,
-    path = here::here("analysis", "covid", "study_dates_covid.json"),
-    pretty = TRUE, auto_unbox = TRUE
-  )
-
-  jsonlite::write_json(
-    split(campaign_info, f = campaign_info$campaign_start_date) |> lapply(as.list),
-    path = here::here("analysis", "covid", "campaign_info_covid.json"),
-    pretty = TRUE, auto_unbox = TRUE
-  )
-}
