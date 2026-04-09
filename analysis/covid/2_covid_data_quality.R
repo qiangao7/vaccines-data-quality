@@ -22,6 +22,7 @@ library(here)
 library(glue)
 
 # Import custom functions
+source(here("analysis", "covid", "0_covid_utility_functions.R"))
 source(here("analysis", "covid", "0_covid_design.R"))
 
 # create output directory

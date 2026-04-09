@@ -1,6 +1,5 @@
 # _________________________________________________
 # Purpose:
-# define useful functions used in the codebase
 # define key design features for the study
 # define some look up tables to use in the codebase
 # this script should be sourced using:
@@ -8,18 +7,6 @@
 # _________________________________________________
 
 library("tidyverse")
-
-# utility functions ----
-
-roundmid_any <- function(x, to = 1) {
-  # like ceiling_any, but centers on (integer) midpoint of the rounding points
-  if (to == 0) {
-    x
-  } else {
-    ceiling(x / to) * to - (floor(to / 2) * (x != 0))
-  }
-}
-
 
 # Design elements ----
 
