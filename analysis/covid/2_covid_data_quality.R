@@ -20,6 +20,7 @@ library(lubridate)
 library(arrow)
 library(here)
 library(glue)
+library(fs)
 
 # Import custom functions
 source(here("analysis", "covid", "0_covid_utility_functions.R"))
@@ -32,6 +33,7 @@ options(width = 200) # set output width for capture.output
 
 
 # 1. extract event level data for vaccines ----
+localrun <- Sys.getenv("OPENSAFELY_BACKEND") %in% c("", "expectations")
 
 data_vax_ELD0 <- read_feather(here("output", "covid", "extract_covid", "vaccinations.arrow"))
 
@@ -108,10 +110,10 @@ data_vax_ELD <-
     flag_unapproved_product = !(product_chr %in% names(approval_lookup)),
 
     # B: product recorded before approval (only if recognised)
-    flag_product_before_approval =
-      (product_chr %in% names(approval_lookup)) &
-      vax_date < approval_date
-  ) |>
+    flag_product_before_approval = case_when(
+      flag_unapproved_product ~ NA,
+      TRUE ~ vax_date < approval_date
+    )) |>
   as_tibble()
 
 
@@ -120,7 +122,7 @@ data_vax_ELD <-
 
 products_cooccurrence_flat <- 
   data_vax_ELD |>
-  group_by(patient_id, vax_date,campaign, vax_product) |>
+  group_by(patient_id, vax_date, vax_product) |>
   summarise(
     n_product = n(),
     .groups = "drop_last"
@@ -151,13 +153,13 @@ data_vax_ELD <-
   left_join(
     products_cooccurrence_flat |>
       select(
-        patient_id, vax_date, campaign,
+        patient_id, vax_date,
         total_records_day, n_products_day, product_pattern,
         flag_same_day_multiple,
         flag_same_day_same_product,
         flag_same_day_mixed_product
       ),
-    by = c("patient_id", "vax_date", "campaign")
+    by = c("patient_id", "vax_date")
   ) |>
   as_tibble()
 
@@ -271,185 +273,160 @@ flag_long_noninterval <-
 
 
 # 5. Output: descriptive summary tables
-
-# ---- helper 1: summary table with total denominator only ----
-make_summary_table_total <- function(data, group_vars, denom_df) {
-  data |>
-    group_by(across(all_of(group_vars))) |>
-    summarise(
-      n_records  = roundmid_any(n(), sdc_threshold),
-      n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
-      .groups = "drop"
-    ) |>
-    mutate(
-      denom_records_total  = denom_df$denom_records_total,
-      denom_patients_total = denom_df$denom_patients_total,
-      pct_records_total  = round(100 * n_records  / denom_records_total, 1),
-      pct_patients_total = round(100 * n_patients / denom_patients_total, 1)
-    ) |>
-    select(
-      all_of(group_vars),
-      n_records,
-      n_patients,
-      denom_records_total,
-      denom_patients_total,
-      pct_records_total,
-      pct_patients_total
-    )
-}
-
-# ---- non-interval denominators ----
-denom_noninterval_total <-
-  data_vax_ELD |>
-  summarise(
-    denom_records_total  = roundmid_any(n(), sdc_threshold),
-    denom_patients_total = roundmid_any(n_distinct(patient_id), sdc_threshold)
-  )
+# 2 version: unrounded + rounded
+# we can look on L4 to see if rounding has introduced any issues
 
 # ---- Table 1: Overall summary of non-interval flags ----
-table_overall_noninterval_flags <-
-  make_summary_table_total(
+table_overall_noninterval_flags_unrounded <-
+  make_summary_table_total_unrounded(
     data = flag_long_noninterval,
-    group_vars = c("flag_type"),
-    denom_df = denom_noninterval_total
+    group_vars = c("flag_type")
+  ) |>
+  arrange(flag_type)
+
+table_overall_noninterval_flags_rounded <-
+  make_summary_table_total_rounded(
+    data = flag_long_noninterval,
+    group_vars = c("flag_type")
   ) |>
   arrange(flag_type)
 
 write_csv(
-  table_overall_noninterval_flags,
+  table_overall_noninterval_flags_unrounded,
+  fs::path(output_dir, "count_overall_noninterval_flags_unrounded.csv")
+)
+
+write_csv(
+  table_overall_noninterval_flags_rounded,
   fs::path(output_dir, "count_overall_noninterval_flags.csv")
 )
 
-# ---- Table 2: Campaign summary of non-interval flags ----
-table_campaign_noninterval_flags <-
-  make_summary_table_total(
-    data = flag_long_noninterval,
-    group_vars = c("campaign", "flag_type"),
-    denom_df = denom_noninterval_total
+
+# ---- Table 2: Campaign summary of non-interval flags with campaign-specific alive denominators ----
+table_campaign_noninterval_flags_unrounded <-
+  make_summary_table_campaign_alive_unrounded(
+    flag_data = flag_long_noninterval,
+    event_data = data_vax_ELD
+  ) |>
+  arrange(campaign, flag_type)
+
+table_campaign_noninterval_flags_rounded <-
+  make_summary_table_campaign_alive_rounded(
+    flag_data = flag_long_noninterval,
+    event_data = data_vax_ELD
   ) |>
   arrange(campaign, flag_type)
 
 write_csv(
-  table_campaign_noninterval_flags,
+  table_campaign_noninterval_flags_unrounded,
+  fs::path(output_dir, "count_campaign_noninterval_flags_unrounded.csv")
+)
+
+write_csv(
+  table_campaign_noninterval_flags_rounded,
   fs::path(output_dir, "count_campaign_noninterval_flags.csv")
 )
 
+
 # ---- Table 3: Product summary of non-interval flags ----
-table_product_noninterval_flags <-
-  make_summary_table_total(
+table_product_noninterval_flags_unrounded <-
+  make_summary_table_total_unrounded(
     data = flag_long_noninterval,
-    group_vars = c("vax_product", "flag_type"),
-    denom_df = denom_noninterval_total
+    group_vars = c("vax_product", "flag_type")
+  ) |>
+  arrange(vax_product, flag_type)
+
+table_product_noninterval_flags_rounded <-
+  make_summary_table_total_rounded(
+    data = flag_long_noninterval,
+    group_vars = c("vax_product", "flag_type")
   ) |>
   arrange(vax_product, flag_type)
 
 write_csv(
-  table_product_noninterval_flags,
+  table_product_noninterval_flags_unrounded,
+  fs::path(output_dir, "count_product_noninterval_flags_unrounded.csv")
+)
+
+write_csv(
+  table_product_noninterval_flags_rounded,
   fs::path(output_dir, "count_product_noninterval_flags.csv")
 )
 
-# ---- Interval analysis denominators ----
-
-# ---- helper 2: interval table with within-group + total denominator ----
-make_interval_table <- function(data, group_var, denom_df) {
-  
-  summary_df <-
-    data |>
-    group_by(across(all_of(c(group_var, "interval_bin")))) |>
-    summarise(
-      n_records  = roundmid_any(n(), sdc_threshold),
-      n_patients = roundmid_any(n_distinct(patient_id), sdc_threshold),
-      .groups = "drop"
-    )
-
-  denom_df_group <-
-    data |>
-    group_by(across(all_of(group_var))) |>
-    summarise(
-      denom_records_group  = roundmid_any(n(), sdc_threshold),
-      denom_patients_group = roundmid_any(n_distinct(patient_id), sdc_threshold),
-      .groups = "drop"
-    )
-
-  summary_df |>
-    left_join(denom_df_group, by = group_var) |>
-    mutate(
-      denom_records_total  = denom_df$denom_records_total,
-      denom_patients_total = denom_df$denom_patients_total,
-
-      pct_records_within_group =
-        round(100 * n_records / denom_records_group, 1),
-      pct_patients_within_group =
-        round(100 * n_patients / denom_patients_group, 1),
-
-      pct_records_total =
-        round(100 * n_records / denom_records_total, 1),
-      pct_patients_total =
-        round(100 * n_patients / denom_patients_total, 1)
-    ) |>
-    select(
-      all_of(group_var),
-      interval_bin,
-      n_records,
-      n_patients,
-      denom_records_group,
-      denom_patients_group,
-      denom_records_total,
-      denom_patients_total,
-      pct_records_within_group,
-      pct_patients_within_group,
-      pct_records_total,
-      pct_patients_total
-    )
-}
-
-
-# ---- interval denominator ----
-denom_interval_total <-
-  data_vax_interval |>
-  summarise(
-    denom_records_total  = roundmid_any(n(), sdc_threshold),
-    denom_patients_total = roundmid_any(n_distinct(patient_id), sdc_threshold)
-  )
 
 # ---- Table 4: interval context x interval bin ----
-table_interval_context <-
-  make_interval_table(
+table_interval_context_unrounded <-
+  make_interval_table_unrounded(
     data = data_vax_interval,
-    group_var = "interval_context",
-    denom_df = denom_interval_total
+    group_var = "interval_context"
+  ) |>
+  arrange(interval_context, interval_bin)
+
+table_interval_context_rounded <-
+  make_interval_table_rounded(
+    data = data_vax_interval,
+    group_var = "interval_context"
   ) |>
   arrange(interval_context, interval_bin)
 
 write_csv(
-  table_interval_context,
+  table_interval_context_unrounded,
+  fs::path(output_dir, "count_interval_context_unrounded.csv")
+)
+
+write_csv(
+  table_interval_context_rounded,
   fs::path(output_dir, "count_interval_context.csv")
 )
 
+
 # ---- Table 5: campaign transition type x interval bin ----
-table_interval_campaign_transition <-
-  make_interval_table(
+table_interval_campaign_transition_unrounded <-
+  make_interval_table_unrounded(
     data = data_vax_interval,
-    group_var = "campaign_transition_type",
-    denom_df = denom_interval_total
+    group_var = "campaign_transition_type"
+  ) |>
+  arrange(campaign_transition_type, interval_bin)
+
+table_interval_campaign_transition_rounded <-
+  make_interval_table_rounded(
+    data = data_vax_interval,
+    group_var = "campaign_transition_type"
   ) |>
   arrange(campaign_transition_type, interval_bin)
 
 write_csv(
-  table_interval_campaign_transition,
+  table_interval_campaign_transition_unrounded,
+  fs::path(output_dir, "count_interval_campaign_transition_unrounded.csv")
+)
+
+write_csv(
+  table_interval_campaign_transition_rounded,
   fs::path(output_dir, "count_interval_campaign_transition.csv")
 )
 
+
 # ---- Table 6: product transition type x interval bin ----
-table_interval_product_transition <-
-  make_interval_table(
+table_interval_product_transition_unrounded <-
+  make_interval_table_unrounded(
     data = data_vax_interval,
-    group_var = "product_transition_type",
-    denom_df = denom_interval_total
+    group_var = "product_transition_type"
+  ) |>
+  arrange(product_transition_type, interval_bin)
+
+table_interval_product_transition_rounded <-
+  make_interval_table_rounded(
+    data = data_vax_interval,
+    group_var = "product_transition_type"
   ) |>
   arrange(product_transition_type, interval_bin)
 
 write_csv(
-  table_interval_product_transition,
+  table_interval_product_transition_unrounded,
+  fs::path(output_dir, "count_interval_product_transition_unrounded.csv")
+)
+
+write_csv(
+  table_interval_product_transition_rounded,
   fs::path(output_dir, "count_interval_product_transition.csv")
 )
