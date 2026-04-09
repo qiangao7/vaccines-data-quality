@@ -218,8 +218,7 @@ For each `flag_type`:
 - `n_patients`
 - `denom_records_total`
 - `denom_patients_total`
-- `pct_records_total`
-- `pct_patients_total`
+
 
 
 ---
@@ -236,8 +235,7 @@ For each `campaign × flag_type`:
 - `n_patients`
 - `denom_records_total`
 - `denom_patients_total`
-- `pct_records_total`
-- `pct_patients_total`
+
 
 ---
 
@@ -253,8 +251,6 @@ For each `vax_product × flag_type`:
 - `n_patients`
 - `denom_records_total`
 - `denom_patients_total`
-- `pct_records_total`
-- `pct_patients_total`
 
 ---
 ### 5.2 Interval summaries
@@ -276,10 +272,7 @@ For each `interval_context × interval_bin`:
 - `denom_patients_group`
 - `denom_records_total`
 - `denom_patients_total`
-- `pct_records_within_group`
-- `pct_patients_within_group`
-- `pct_records_total`
-- `pct_patients_total`
+
 
 ---
 
@@ -297,10 +290,7 @@ For each `campaign_transition_type × interval_bin`:
 - `denom_patients_group`
 - `denom_records_total`
 - `denom_patients_total`
-- `pct_records_within_group`
-- `pct_patients_within_group`
-- `pct_records_total`
-- `pct_patients_total`
+
 
 --
 
@@ -318,10 +308,7 @@ For each `product_transition_type × interval_bin`:
 - `denom_patients_group`
 - `denom_records_total`
 - `denom_patients_total`
-- `pct_records_within_group`
-- `pct_patients_within_group`
-- `pct_records_total`
-- `pct_patients_total`
+
 
 ---
 
