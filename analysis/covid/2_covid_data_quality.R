@@ -33,9 +33,15 @@ options(width = 200) # set output width for capture.output
 
 # 1. extract event level data for vaccines ----
 
-data_vax_ELD0 <- read_feather(here("output", "outputs_covid", "modify_dummy_extract", "vaccinations.arrow"))
+data_vax_ELD0 <- read_feather(here("output", "covid", "extract_covid", "vaccinations.arrow"))
 
-
+if (localrun) {
+  source(here("analysis", "covid", "1_covid_modify_dummy_extract.R"))
+  data_vax_ELD0 <- 
+    data_vax_ELD0 |>
+      make_vax_baseline_clean(seed = 123) |>
+      inject_vax_errors(seed = 123)
+}
 # 2. Prepare dataset 
 
 data_vax_ELD <-

@@ -1,20 +1,17 @@
-library(arrow)
-library(dplyr)
-library(here)
-library(fs)
-
-source(here("analysis", "covid", "0_covid_design.R"))
-
-# this script should only be run locally / on dummy data
-localrun <- Sys.getenv("OPENSAFELY_BACKEND") %in% c("", "expectations")
-
-# input / output paths
-in_path  <- here("output", "outputs_covid", "extract_covid", "vaccinations.arrow")
-out_dir  <- here("output", "outputs_covid", "modify_dummy_extract")
-out_path <- fs::path(out_dir, "vaccinations.arrow")
-
-fs::dir_create(out_dir)
-
+recalculate_age_from_shift <- function(data) {
+  data |>
+    group_by(patient_id) |>
+    mutate(
+      ref_vax_date = first(vax_date),
+      ref_age = first(age),
+      age = pmax(
+        0L,
+        as.integer(ref_age + floor(as.numeric(vax_date - ref_vax_date) / 365.25))
+      )
+    ) |>
+    ungroup() |>
+    select(-ref_vax_date, -ref_age)
+}
 
 make_vax_baseline_clean <- function(data, seed = 123) {
   set.seed(seed)
@@ -211,15 +208,6 @@ if (n_per_bin > 0) {
 
 data |>
   select(-n_records_day, -prev_n_records_day, -prev_date) |>
-  arrange(patient_id, vax_date)
+    arrange(patient_id, vax_date) |>
+    recalculate_age_from_shift()
 }
-
-data <- read_feather(in_path)
-
-if (localrun) {
-  data <- data |>
-    make_vax_baseline_clean(seed = 123) |>
-    inject_vax_errors(seed = 123)
-}
-
-write_feather(data, out_path)

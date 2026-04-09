@@ -31,18 +31,11 @@ actions:
       --output output/outputs_covid/extract_covid:arrow
     outputs:
       highly_sensitive:
-        cohort: output/outputs_covid/extract_covid/*.arrow
-
-  modify_dummy_extract_covid:
-    run: r:v2 analysis/covid/1_covid_modify_dummy_extract.R
-    needs: [extract_covid]
-    outputs:
-      highly_sensitive:
-        cohort: output/outputs_covid/modify_dummy_extract/*.arrow
+        cohort: output/covid/extract_covid/*.arrow
 
   report_data_quality_covid:
     run: r:v2 analysis/covid/2_covid_data_quality.R
-    needs: [modify_dummy_extract_covid]
+    needs: [extract_covid]
     outputs:
       moderately_sensitive:
         csv: output/outputs_covid/covid_data_quality/*.csv
