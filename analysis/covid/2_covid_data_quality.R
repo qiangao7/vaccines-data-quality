@@ -277,16 +277,19 @@ flag_long_noninterval <-
 
 # ---- Table 1: Overall summary of non-interval flags ----
 table_overall_noninterval_flags_unrounded <-
-  make_summary_table_total_unrounded(
+  make_summary_table_total(
     data = flag_long_noninterval,
-    group_vars = c("flag_type")
+    group_vars = c("flag_type"),
+    round = FALSE
   ) |>
   arrange(flag_type)
 
 table_overall_noninterval_flags_rounded <-
-  make_summary_table_total_rounded(
+  make_summary_table_total(
     data = flag_long_noninterval,
-    group_vars = c("flag_type")
+    group_vars = c("flag_type"),
+    round = TRUE,
+    sdc_threshold = sdc_threshold
   ) |>
   arrange(flag_type)
 
@@ -301,18 +304,21 @@ write_csv(
 )
 
 
-# ---- Table 2: Campaign summary of non-interval flags with campaign-specific alive denominators ----
+# ---- Table 2: Campaign summary of non-interval flags with campaign-specific active denominators ----
 table_campaign_noninterval_flags_unrounded <-
-  make_summary_table_campaign_alive_unrounded(
+  make_summary_table_campaign_active(
     flag_data = flag_long_noninterval,
-    event_data = data_vax_ELD
+    event_data = data_vax_ELD,
+    round = FALSE
   ) |>
   arrange(campaign, flag_type)
 
 table_campaign_noninterval_flags_rounded <-
-  make_summary_table_campaign_alive_rounded(
+  make_summary_table_campaign_active(
     flag_data = flag_long_noninterval,
-    event_data = data_vax_ELD
+    event_data = data_vax_ELD,
+    round = TRUE,
+    sdc_threshold = sdc_threshold
   ) |>
   arrange(campaign, flag_type)
 
@@ -329,16 +335,19 @@ write_csv(
 
 # ---- Table 3: Product summary of non-interval flags ----
 table_product_noninterval_flags_unrounded <-
-  make_summary_table_total_unrounded(
+  make_summary_table_total(
     data = flag_long_noninterval,
-    group_vars = c("vax_product", "flag_type")
+    group_vars = c("vax_product", "flag_type"),
+    round = FALSE
   ) |>
   arrange(vax_product, flag_type)
 
 table_product_noninterval_flags_rounded <-
-  make_summary_table_total_rounded(
+  make_summary_table_total(
     data = flag_long_noninterval,
-    group_vars = c("vax_product", "flag_type")
+    group_vars = c("vax_product", "flag_type"),
+    round = TRUE,
+    sdc_threshold = sdc_threshold
   ) |>
   arrange(vax_product, flag_type)
 
@@ -355,16 +364,19 @@ write_csv(
 
 # ---- Table 4: interval context x interval bin ----
 table_interval_context_unrounded <-
-  make_interval_table_unrounded(
+  make_interval_table(
     data = data_vax_interval,
-    group_var = "interval_context"
+    group_var = "interval_context",
+    round = FALSE
   ) |>
   arrange(interval_context, interval_bin)
 
 table_interval_context_rounded <-
-  make_interval_table_rounded(
+  make_interval_table(
     data = data_vax_interval,
-    group_var = "interval_context"
+    group_var = "interval_context",
+    round = TRUE,
+    sdc_threshold = sdc_threshold
   ) |>
   arrange(interval_context, interval_bin)
 
@@ -381,16 +393,19 @@ write_csv(
 
 # ---- Table 5: campaign transition type x interval bin ----
 table_interval_campaign_transition_unrounded <-
-  make_interval_table_unrounded(
+  make_interval_table(
     data = data_vax_interval,
-    group_var = "campaign_transition_type"
+    group_var = "campaign_transition_type",
+    round = FALSE
   ) |>
   arrange(campaign_transition_type, interval_bin)
 
 table_interval_campaign_transition_rounded <-
-  make_interval_table_rounded(
+  make_interval_table(
     data = data_vax_interval,
-    group_var = "campaign_transition_type"
+    group_var = "campaign_transition_type",
+    round = TRUE,
+    sdc_threshold = sdc_threshold
   ) |>
   arrange(campaign_transition_type, interval_bin)
 
@@ -407,16 +422,19 @@ write_csv(
 
 # ---- Table 6: product transition type x interval bin ----
 table_interval_product_transition_unrounded <-
-  make_interval_table_unrounded(
+  make_interval_table(
     data = data_vax_interval,
-    group_var = "product_transition_type"
+    group_var = "product_transition_type",
+    round = FALSE
   ) |>
   arrange(product_transition_type, interval_bin)
 
 table_interval_product_transition_rounded <-
-  make_interval_table_rounded(
+  make_interval_table(
     data = data_vax_interval,
-    group_var = "product_transition_type"
+    group_var = "product_transition_type",
+    round = TRUE,
+    sdc_threshold = sdc_threshold
   ) |>
   arrange(product_transition_type, interval_bin)
 
